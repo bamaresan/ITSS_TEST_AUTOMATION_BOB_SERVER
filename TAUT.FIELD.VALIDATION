@@ -1,0 +1,146 @@
+*-----------------------------------------------------------------------------
+* <Rating>68</Rating>
+*-----------------------------------------------------------------------------
+*2016-10-04-- system throws the invalid function even the function field is null
+    SUBROUTINE TAUT.FIELD.VALIDATION
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT TAUT.BP I_F.TAUT.PARAMETER
+    $INSERT I_F.STANDARD.SELECTION
+    $INSERT I_F.USER
+    $INSERT I_F.COMPANY
+    $INSERT I_F.VERSION
+
+    GOSUB INIT
+    GOSUB PROCESS
+    RETURN
+
+INIT:
+*----
+    I = 1
+    Y.SS.ERR = ''
+    Y.USR.ERR = ''
+    Y.COMP.ERR = ''
+    Y.VERS.ERR = ''
+
+    FN.STANDARD.SELECTION = 'F.STANDARD.SELECTION'
+    F.STANDARD.SELECTION = ''
+    CALL OPF(FN.STANDARD.SELECTION, F.STANDARD.SELECTION)
+
+    FN.USER = 'F.USER'
+    F.USER = ''
+    CALL OPF(FN.USER, F.USER)
+
+    FN.COMPANY = 'F.COMPANY'
+    F.COMPANY= ''
+    CALL OPF(FN.COMPANY, F.COMPANY)
+
+    FN.VERSION = 'F.VERSION'
+    F.VERSION = ''
+    CALL OPF(FN.VERSION, F.VERSION)
+
+    RETURN
+
+PROCESS:
+*-------
+    Y.EXCL.APPL.TOT = R.NEW(TAUT.EXCL.APPL)
+    Y.APPL.CNT = DCOUNT(Y.EXCL.APPL.TOT,VM)
+    LOOP
+    WHILE I LE Y.APPL.CNT
+        Y.EXCL.FUN = R.NEW(TAUT.EXCL.FUNCTION)<1,I>
+        Y.LIST.OF.FUN = 'A 2 B C D E F H I L P R S V'
+        CHANGE ' ' TO VM IN Y.LIST.OF.FUN
+*2016-10-04 begin
+        IF Y.EXCL.FUN THEN
+            LOCATE Y.EXCL.FUN IN Y.LIST.OF.FUN<1,1> SETTING Y.FUN.POS THEN
+            END ELSE
+                AF = TAUT.EXCL.FUNCTION
+                AV = I
+                ETEXT = 'EB-INVALID.FUNT.TABLE'
+                CALL STORE.END.ERROR
+            END
+*2016-10-04 end
+        END
+        I++
+    REPEAT
+
+    Y.PATH = ''
+    BEGIN CASE
+    CASE AF = TAUT.STORE.TXNS.OFS
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.STORE.TXNS.OFS
+        GOSUB VALIDATE.PATH
+
+    CASE AF = TAUT.PROCESSED.JNL
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.PROCESSED.JNL
+        GOSUB VALIDATE.PATH
+
+    CASE AF = TAUT.STORE.TXNS
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.STORE.TXNS
+        GOSUB VALIDATE.PATH
+
+    CASE AF = TAUT.TGT.UPLOAD.DONE
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.TGT.UPLOAD.DONE
+        GOSUB VALIDATE.PATH
+
+    CASE AF = TAUT.TGT.UPL.FAILED
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.TGT.UPL.FAILED
+        GOSUB VALIDATE.PATH
+
+    CASE AF = TAUT.TGT.UPL.REPEAT
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.TGT.UPL.REPEAT
+        GOSUB VALIDATE.PATH
+
+    CASE AF = TAUT.COMPARE.JNL.REPORT
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.COMPARE.JNL.REPORT
+        GOSUB VALIDATE.PATH
+
+    CASE AF = TAUT.TGT.UPL.REPORTS
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.TGT.UPL.REPORTS
+        GOSUB VALIDATE.PATH
+
+    CASE AF = TAUT.LOG.FILE
+        Y.PATH = R.NEW(AF)
+        Y.FIELD.NO = TAUT.LOG.FILE
+        GOSUB VALIDATE.PATH
+
+    CASE 1
+        NULL
+    END CASE
+
+    RETURN
+
+VALIDATE.PATH:
+*-------------
+    Y.TEMP.PATH = ''
+    IF SYSTEM(1017) MATCHES 'WINNT':VM:'WIN95' THEN         ;* if windows
+        slash = '\'
+        CHANGE '/' TO slash IN Y.PATH
+    END ELSE        ;* unix , etc
+        slash = '/'
+        CHANGE '\' TO slash IN Y.PATH
+    END
+
+    OPENPATH Y.PATH TO Y.TEMP.PATH ELSE Y.PATH.ERR = 1
+    IF Y.PATH.ERR THEN
+        AF = Y.FIELD.NO
+        AV = I
+        ETEXT = 'EB-INVALID.PATH.ENT'
+        CALL STORE.END.ERROR
+    END
+
+    RETURN
+END
+
+
+
+
+

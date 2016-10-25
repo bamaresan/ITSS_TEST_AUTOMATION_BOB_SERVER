@@ -1,0 +1,11 @@
+*-----------------------------------------------------------------------------
+* <Rating>0</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE BTT.SERVER.CAPTURE.FP.IN(MSG)
+* This routine is to attach the IN.MSG.RTN of 'FASTPATH' OFS.SOURCE id.
+    COM/BTT.FP/FP.MSG
+
+    FP.MSG = MSG
+
+    RETURN
+END

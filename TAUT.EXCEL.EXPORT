@@ -1,0 +1,355 @@
+*-----------------------------------------------------------------------------
+* <Rating>1696</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE TAUT.EXCEL.EXPORT(XL.PARAMS, INPUT.DATA)
+*
+* XL.PARAMS has the following format: /filename=xxx /sheetname=xxx etc
+*
+
+    GOSUB PARSE.PARAMS
+    GOSUB PROCESS.DATA
+    GOSUB SAVE.DATA
+    RETURN
+************************************************************
+PARSE.PARAMS:
+* INPUT: XL.PARAMS
+* OUTPUT: XL.FILE.NAME, SHEET.NAMES
+************************************************************
+    XL.FILE.NAME = ""
+    AUTOFILTER = ""
+    ONLY.SHEETS = 0
+    SOURCE.TYPE = "CSV.ARRAY"
+    DEL.XML.FILES = 0
+    PARAMS.2 = CHANGE(XL.PARAMS, " ", @FM)
+    PARAMS.COUNT = DCOUNT(PARAMS.2, @FM)
+    FOR PARAM.IDX = 1 TO PARAMS.COUNT
+        PARAM.VALUE = PARAMS.2<PARAM.IDX>
+        BEGIN CASE
+        CASE LOWCASE(PARAM.VALUE["=", 1, 1]) = '/filename'
+            XL.FILE.NAME = PARAM.VALUE["=", 2, 1]
+        CASE LOWCASE(PARAM.VALUE["=", 1, 1]) MATCHES '/sheetname':@VM:"/sheetnames"
+            SHEET.NAMES = PARAM.VALUE["=", 2, 1]
+        CASE LOWCASE(PARAM.VALUE["=", 1, 1]) = '/autofilter'
+            AUTOFILTER = PARAM.VALUE["=", 2, 1]
+            IF AUTOFILTER = "" THEN AUTOFILTER = "ALL"
+        CASE LOWCASE(PARAM.VALUE["=", 1, 1]) = '/sheetsonly'
+            ONLY.SHEETS = 1
+        CASE LOWCASE(PARAM.VALUE["=", 1, 1]) = '/sourcetype'
+            SOURCE.TYPE = UPCASE(PARAM.VALUE["=", 2, 1])
+        CASE LOWCASE(PARAM.VALUE["=", 1, 1]) = '/delete.xml.files'
+            DEL.XML.FILES = 1
+        END CASE
+    NEXT PARAM.IDX
+    IF XL.FILE.NAME = "" THEN
+        CRT "Please specify the output file name."
+        STOP
+    END
+    STYLES = ""
+    STYLES<1, -1> = "."
+    STYLES<2, -1> = "Default"
+    XL.DATA = ""
+    WORK.FILE.NAME = "AV.XL.EXPORT.TMP.":@USERNO
+    OPENSEQ WORK.FILE.NAME TO F.WORK THEN
+        WEOFSEQ F.WORK
+    END ELSE
+        CREATE F.WORK THEN
+        END
+    END
+    RETURN
+************************************************************
+PROCESS.DATA:
+* OUTPUT: XL.DATA
+************************************************************
+    BEGIN CASE
+    CASE SOURCE.TYPE = "CSV.ARRAY"
+        GOSUB PROCESS.CSV.ARRAY
+    CASE SOURCE.TYPE = "XML.FILES"
+        GOSUB PROCESS.XML.FILES
+    END CASE
+    RETURN
+************************************************************
+PROCESS.CSV.ARRAY:
+************************************************************
+    SHEET.COUNT = DCOUNT(INPUT.DATA, @FM)
+    FOR SHEET.IDX = 1 TO SHEET.COUNT
+        SHEET.DATA = RAISE(INPUT.DATA<SHEET.IDX>)
+        SHEET.NAME = SHEET.NAMES[",", SHEET.IDX, 1]
+        IF SHEET.NAME = "" THEN SHEET.NAME = "Sheet":SHEET.IDX
+        ROW.COUNT = 0
+        COL.COUNT = 0
+        SHEET.XML = ""
+        LOOP
+            READNEXT CSV.LINE FROM SHEET.DATA ELSE BREAK
+            GOSUB PROCESS.LINE
+        REPEAT
+        GOSUB ADD.SHEET.HEADER
+        WRITESEQ SHEET.XML TO F.WORK THEN
+        END
+    NEXT SHEET.IDX
+    RETURN
+************************************************************
+PROCESS.XML.FILES:
+************************************************************
+    FILES.COUNT = DCOUNT(INPUT.DATA, @FM)
+    FOR FILE.IDX = 1 TO FILES.COUNT
+        FILE.NAME = INPUT.DATA<FILE.IDX>
+        OPENSEQ FILE.NAME TO F.TEMP ELSE
+            CONTINUE
+        END
+        GOSUB LOAD.XML.STYLES
+        LOOP
+*            READSEQ XML.LINE FROM F.TEMP ELSE BREAK
+*            WRITESEQ XML.LINE TO F.WORK THEN
+*            END
+            READBLK XML.BLOCK FROM F.TEMP, 1000000 ELSE BREAK
+            WRITEBLK XML.BLOCK TO F.WORK THEN
+            END
+        REPEAT
+        CLOSE F.TEMP
+
+        IF DEL.XML.FILES THEN
+            EXECUTE "rm ":FILE.NAME
+        END
+    NEXT FILE.IDX
+    RETURN
+************************************************************
+LOAD.XML.STYLES:
+* INPUT: F.TEMP
+************************************************************
+    IN.STYLES = 0
+    END.STYLES = 0
+    LOOP
+        READSEQ XML.LINE FROM F.TEMP ELSE BREAK
+        II = INDEX(XML.LINE, "<Styles>", 1)
+        IF II > 0 THEN
+            IN.STYLES = 1
+            XML.LINE = XML.LINE[II + 8, -1]
+        END
+        II = INDEX(XML.LINE, "</Styles>", 1)
+        IF II > 0 THEN
+            XML.LINE = XML.LINE[1, II - 1]
+            END.STYLES = 1
+        END
+        IF IN.STYLES THEN
+            LOOP
+                II = INDEX(XML.LINE, 'ss:ID="', 1)
+            WHILE II > 0
+                XML.LINE = XML.LINE[II + 1, -1]
+                STYLE.NAME = XML.LINE['"', 2, 1]
+                LOCATE STYLE.NAME IN STYLES<2, 1> SETTING DUMMY ELSE
+                    STYLES<1, -1> = STYLE.NAME
+                    STYLES<2, -1> = STYLE.NAME
+                END
+            REPEAT
+        END
+        IF END.STYLES THEN BREAK
+    REPEAT
+    RETURN
+************************************************************
+PROCESS.LINE:
+* INPUT: CSV.LINE
+* OUTPUT: SHEET.XML
+************************************************************
+    XML.ROW = ""
+    ROW.COUNT++
+    IF CSV.LINE = "" THEN     ;* add an empty line
+        SHEET.XML<-1> = '<Row ss:AutoFitHeight="0"></Row>'
+        RETURN
+    END
+
+    GOSUB PARSE.CELL.VALUES
+    SHEET.XML<-1> = '<Row ss:AutoFitHeight="0">'
+    LOOP
+        READNEXT CELL.VALUE FROM CELL.VALUES ELSE BREAK
+        GOSUB PROCESS.CELL.VALUE
+        SHEET.XML<-1> = CELL.XML.INFO
+    REPEAT
+    SHEET.XML<-1> = "</Row>"
+    RETURN
+************************************************************
+PROCESS.CELL.VALUE:
+* INPUT: CELL.VALUE
+* OUTPUT: CELL.XML.INFO
+************************************************************
+    CELL.XML.INFO = ""
+    GOSUB FIND.CELL.STYLE
+    CHANGE "&" TO "&amp;" IN CELL.VALUE
+    CHANGE "<" TO "&lt;" IN CELL.VALUE
+    CHANGE ">" TO "&gt;" IN CELL.VALUE
+    CHANGE '"' TO "&quot;" IN CELL.VALUE
+    CHANGE "'" TO "&apos;" IN CELL.VALUE
+
+    CHANGE CHAR(233) TO "e" IN CELL.VALUE
+    CELL.XML.INFO = "<Cell"
+    IF CELL.STYLE.ID <> "" THEN CELL.XML.INFO := ' ss:StyleID="':CELL.STYLE.ID:'"'
+    IF CELL.VALUE[1, 1] = "=" THEN
+        CELL.XML.INFO :=  ' ss:Formula="':CELL.VALUE:'"'
+        CELL.VALUE = ""
+    END
+    CELL.XML.INFO := ">"
+    CELL.XML.INFO := "<Data ss:Type=":CELL.DATA.TYPE:">":CELL.VALUE:"</Data></Cell>"
+    RETURN
+************************************************************
+FIND.CELL.STYLE:
+* INPUT: CELL.VALUE
+* OUTPUT: CELL.VALUE, CELL.STYLE.ID, CELL.DATA.TYPE
+************************************************************
+    CELL.STYLE.ID = ""
+    CELL.DATA.TYPE = '"String"'
+    IF CELL.VALUE[1, 1] <> "<" THEN
+        RETURN
+    END
+    CELL.STYLE = CELL.VALUE[">", 1, 1]
+    CELL.VALUE = CELL.VALUE[LEN(CELL.STYLE) + 2, -1]
+    CELL.STYLE = CELL.STYLE[2, -1]
+    CELL.STYLE.2 = CELL.STYLE
+    CHANGE "N" TO "" IN CELL.STYLE
+    IF CELL.STYLE THEN
+        LOCATE CELL.STYLE IN STYLES<1, 1> SETTING STYLE.IDX THEN
+            CELL.STYLE.ID = STYLES<2, STYLE.IDX>
+        END ELSE
+            CELL.STYLE.ID = CELL.STYLE
+            STYLES<1, -1> = CELL.STYLE
+            STYLES<2, -1> = CELL.STYLE.ID
+        END
+        IF CELL.STYLE.ID = "." THEN CELL.STYLE.ID = ""
+    END
+    IF INDEX(CELL.STYLE.2, "N", 1) > 0 THEN CELL.DATA.TYPE = '"Number"'
+    RETURN
+************************************************************
+PARSE.CELL.VALUES:
+* INPUT: CSV.LINE
+* OUTPUT: CELL.VALUES, COL.COUNT
+************************************************************
+    CELL.VALUES = ""
+    QUOTE.CHAR = ""
+    C.COUNT = 0
+    CSV.LINE := " " ;* so the condition II = LEN(CSV.LINE) in case below will work OK
+    II = 1
+    JJ = 1
+    LOOP
+    WHILE II <= LEN(CSV.LINE)
+        CSV.CHAR = CSV.LINE[II, 1]
+        BEGIN CASE
+        CASE CSV.CHAR = '"' AND QUOTE.CHAR = ""
+            QUOTE.CHAR = CSV.CHAR
+        CASE CSV.CHAR = QUOTE.CHAR
+            QUOTE.CHAR = ""
+        CASE (CSV.CHAR = "," AND QUOTE.CHAR = "") OR II = LEN(CSV.LINE)
+            CELL.VALUE = CSV.LINE[JJ, II - JJ]
+            CELL.VALUE = TRIM(CELL.VALUE, '"', "B")
+            IF CELL.VALUE = "" THEN CELL.VALUE = " "
+            CELL.VALUES<-1> = CELL.VALUE
+            C.COUNT++
+            JJ = II + 1
+        END CASE
+        II++
+    REPEAT
+    IF C.COUNT > COL.COUNT THEN COL.COUNT = C.COUNT         ;* global column count
+    RETURN
+************************************************************
+SAVE.DATA:
+************************************************************
+    GOSUB ADD.STYLES
+    GOSUB ADD.FILE.HEADER
+    CLOSESEQ F.WORK
+    OPENSEQ XL.FILE.NAME TO F.XL THEN
+        WEOFSEQ F.XL
+    END ELSE
+        CREATE F.XL ELSE
+            CRT "Cannot create output file ":XL.FILE.NAME
+            RETURN
+        END
+    END
+    IF NOT(ONLY.SHEETS) THEN
+        WRITESEQ FILE.HEADER TO F.XL THEN
+        END
+    END
+    WRITESEQ STYLES.XML TO F.XL THEN
+    END
+    OPENSEQ WORK.FILE.NAME TO F.WORK THEN
+        LOOP
+*            READSEQ XL.LINE FROM F.WORK ELSE BREAK
+*            WRITESEQ XL.LINE TO F.XL THEN
+*            END
+            READBLK XML.BLOCK FROM F.WORK, 1000000 ELSE BREAK
+            WRITEBLK XML.BLOCK TO F.XL THEN
+            END
+        REPEAT
+    END
+    CLOSESEQ F.WORK
+    EXECUTE "rm ":WORK.FILE.NAME
+*    OSWRITE XL.DATA TO XL.FILE.NAME
+    IF NOT(ONLY.SHEETS) THEN
+        WRITESEQ "</Workbook>" TO F.XL THEN
+        END
+    END
+    CLOSESEQ F.XL
+    RETURN
+************************************************************
+ADD.STYLES:
+* IN: STYLES
+* OUT: XL.DATA
+************************************************************
+    STYLE.COUNT = DCOUNT(STYLES<1>, @VM)
+    STYLES.XML = ""
+    FOR II = 1 TO STYLE.COUNT
+        STYLE.NAME = STYLES<2, II>
+        STYLE.DEF = STYLES<1, II>
+        STYLE.XML = '<Style ss:ID="':STYLE.NAME:'"'
+        IF II = 1 THEN STYLE.XML := ' ss:Name="Normal"'
+        STYLE.XML := ">"
+        IF II = 1 THEN
+            STYLE.XML := '<Alignment ss:Vertical="Bottom"/>'
+            STYLE.XML := '<Borders/>'
+            STYLE.XML := '<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/><Interior/><NumberFormat/><Protection/>'
+        END ELSE
+            STYLE.XML := '<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"'
+            IF INDEX(STYLE.DEF, "B", 1) > 0 THEN STYLE.XML := ' ss:Bold="1"'
+            IF INDEX(STYLE.DEF, "I", 1) > 0 THEN STYLE.XML := ' ss:Italic="1"'
+            IF INDEX(STYLE.DEF, "U", 1) > 0 THEN STYLE.XML := ' ss:Underline="Single"'
+            STYLE.XML := "/>"
+        END
+        STYLE.XML := "</Style>"
+        STYLES.XML<-1> = STYLE.XML
+    NEXT II
+    STYLES.XML = "<Styles>":STYLES.XML:"</Styles>"
+    CHANGE @FM TO CHAR(10) IN STYLES.XML
+    RETURN
+************************************************************
+ADD.SHEET.HEADER:
+* INPUT: ROW.COUNT, COL.COUNT, SHEET.IDX
+* OUTPUT: SHEET.XML
+************************************************************
+    HEADER.XML = '<Worksheet ss:Name="':SHEET.NAME:'">'
+    HEADER.XML<-1> = '<Table ss:ExpandedColumnCount="':COL.COUNT:'" ss:ExpandedRowCount="':ROW.COUNT:'" x:FullColumns="1" x:FullRows="1" ss:DefaultRowHeight="15">'
+    SHEET.XML = HEADER.XML:@FM:SHEET.XML
+    SHEET.XML<-1> = "</Table>"
+
+    BEGIN CASE
+    CASE AUTOFILTER = "ALL"
+        SHEET.AUTOFILTER = "R1C1:R1C":COL.COUNT
+    CASE AUTOFILTER <> ""
+        SHEET.AUTOFILTER = UPCASE(AUTOFILTER[",", SHEET.IDX, 1])
+    CASE 1
+        SHEET.AUTOFILTER = ""
+    END CASE
+    IF SHEET.AUTOFILTER THEN SHEET.XML<-1> = '<AutoFilter x:Range="':SHEET.AUTOFILTER:'" xmlns="urn:schemas-microsoft-com:office:excel"></AutoFilter>'
+
+    SHEET.XML<-1> = "</Worksheet>"
+    CHANGE @FM TO CHAR(10) IN SHEET.XML
+    RETURN
+************************************************************
+ADD.FILE.HEADER:
+************************************************************
+    FILE.HEADER = '<?xml version="1.0"?> <?mso-application progid="Excel.Sheet"?>'
+    FILE.HEADER<-1> = '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"'
+    FILE.HEADER<-1> = 'xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" xmlns:html="http://www.w3.org/TR/REC-html40">'
+    FILE.HEADER<-1> = '<DocumentProperties xmlns="urn:schemas-microsoft-com:office:office"><Author></Author><LastAuthor></LastAuthor> <Company></Company><Version></Version>'
+    FILE.HEADER<-1> = '</DocumentProperties>'
+    CHANGE @FM TO CHAR(10) IN FILE.HEADER
+    RETURN
+END
+
+
+

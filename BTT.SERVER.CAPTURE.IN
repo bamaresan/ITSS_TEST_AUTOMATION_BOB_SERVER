@@ -1,0 +1,50 @@
+*--------------------------------------------------------------------------------
+*-----------------------------------------------------------------------------
+* <Rating>-10</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE BTT.SERVER.CAPTURE.IN(MSG)
+*--------------------------------------------------------------------------------
+* Developed by Thiag Jayachandaran & Shaleesh, 2016
+*--------------------------------------------------------------------------------
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_GTS.COMMON
+    $INSERT I_F.PGM.FILE
+
+    COM/BTT.SERVER/BTT.INIT,REQ.START.TIME,REQUEST.TYPE,REQ.ENQ.NAME,REQ.CRIT.ARGS,FN.BTT.REQUEST,F.BTT.REQUEST,REQ.FROM,FN.BTT.SERVER.PARAM,F.BTT.SERVER.PARAM,REQ.MSG
+
+*--------------------------------------------------------------------------------
+
+    IF NOT(BTT.INIT) THEN
+
+        FN.BTT.REQUEST = 'F.BTT.REQUEST' ; F.BTT.REQUEST = ''
+        CALL OPF(FN.BTT.REQUEST, F.BTT.REQUEST)
+
+        BTT.INIT = 1
+    END
+
+    IF INDEX(MSG,'BROWSER.XML',1) THEN
+        REQ.START.TIME = '' ; REQUEST.TYPE = '' ; REQ.IO.STATS = '' ; REQ.ENQ.NAME = '' ; RE.ENQ.COMP = '' ; REQ.USER = '' ; REQ.CRIT.ARGS = '' ; REQ.FROM = ''
+        REQ.FROM = 'BROWSER'
+        GOSUB PROCESS.BROWSER
+    END
+
+    RETURN
+
+*--------------------------------------------------------------------------------
+PROCESS.BROWSER:
+*---------------
+
+    BTT.PROCESS.MSG = ''
+
+    REQ.START.TIME  = TIMESTAMP() ; REQ.IO.STATS = @USERSTATS
+
+    REQ.MSG = MSG
+
+    RETURN
+
+*--------------------------------------------------------------------------------
+
+END
+
+

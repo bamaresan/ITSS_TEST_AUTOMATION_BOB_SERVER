@@ -1,0 +1,80 @@
+*-----------------------------------------------------------------------------
+* <Rating>178</Rating>
+*-----------------------------------------------------------------------------
+    SUBROUTINE TAUT.PRE.BUILD.OFS.SERVICE
+*---------------------------------------------------------------------------*
+
+* Author       : Sunder
+* Date         : 04 Oct 2016
+* Description  : Single treaded routine to build OFS message to pass source Date field
+*                which would be used to form the date fields in target area.
+*---------------------------------------------------------------------------------------------
+* Modifications
+
+*---------------------------------------------------------------------------------------------
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INSERT I_F.USER
+    $INSERT I_F.TAUT.PARAMETER
+
+    GOSUB INIT
+    GOSUB PROCESS
+
+INIT:
+*---*
+
+    FN.TAUT.PARAM = 'F.TAUT.PARAMETER'
+    F.TAUT.PARAM = ''
+    CALL OPF(FN.TAUT.PARAM,F.TAUT.PARAM)
+
+    R.TAUT.PARAM = ''
+    TAUT.PARAM.READ.ERR = ''
+
+    CALL F.READ(FN.TAUT.PARAM,'SYSTEM',R.TAUT.PARAM,F.TAUT.PARAM,TAUT.PARAM.READ.ERR)
+
+    IF TAUT.PARAM.READ.ERR THEN RETURN
+
+    FN.STORE.SRC.OFS = R.TAUT.PARAM<TAUT.STORE.TXNS.OFS>
+    F.STORE.SRC.OFS = ''
+    CALL OPF(FN.STORE.SRC.OFS,F.STORE.SRC.OFS)
+
+    DATA.SYNC = R.TAUT.PARAM<TAUT.DATA.SYNC>
+    J.USER = R.USER<EB.USE.SIGN.ON.NAME>
+    J.USER.PASSWORD = R.TAUT.PARAM<TAUT.TGT.OFS.PASSWD>
+
+    MIL.SEC = INT(MOD(SYSTEM(12),1000))
+    MIL.SEC = FMT(MIL.SEC,"R%3")
+    Y.DATE  = FMT(DATE(),'D4/')
+*               Y.DATE  = Y.DATE[7,4] : Y.DATE[4,2] : Y.DATE[1,2]
+    Y.DATE  = Y.DATE[7,4] : Y.DATE[1,2] : Y.DATE[4,2]       ;*Check the Date Format on the system & then comment the above or this line.
+    Y.TIME = FMT(TIME(),'MTS')
+    Y.TIME = Y.TIME[1,2]:Y.TIME[4,2]:Y.TIME[7,2] :".":MIL.SEC
+
+    Y.TAUT.PARAM.ID = Y.DATE :".": Y.TIME :"_": "TAUT.PARAMETER" : "_":"SYSTEM":"_":"I":"_":"INPUT":"_":OPERATOR:"_":ID.COMPANY
+
+
+    RETURN
+
+PROCESS:
+*------*
+
+    IF DATA.SYNC NE 'OFFLINE' THEN RETURN
+
+    OFS.HEADER = ""
+    OFS.HEADER = "TAUT.PARAMETER,INPUT/I/PROCESS"
+    OFS.HEADER := ",":J.USER :"/": J.USER.PASSWORD
+    OFS.HEADER := "/,"
+
+    Y.OFS.MSG = OFS.HEADER:"SYSTEM,SOURCE.SYSTEM.DATE::=":TODAY
+
+
+    CALL F.WRITE(FN.STORE.SRC.OFS,Y.TAUT.PARAM.ID,Y.OFS.MSG)
+
+    RETURN
+
+END
+
+
+
+
+

@@ -1,0 +1,23 @@
+*-----------------------------------------------------------------------------
+* <Rating>0</Rating>
+*-----------------------------------------------------------------------------
+*Modification History:-
+*20160923  - Amaresan - No.Input , No.Change field will be identified based on the Input Version.
+*                       So, T() array has been captured in Version.control.
+*20160927 - Amaresan  - No.change filed check is wrong .
+*-----------------------------------------------------------------------------
+
+    SUBROUTINE TAUT.BUILD.OFS.SERVICE.SELECT
+
+    $INSERT I_COMMON
+    $INSERT I_EQUATE
+    $INCLUDE TAUT.BP I_TAUT.BUILD.OFS.SERVICE.COMMON
+
+    ID.LIST = ''
+    LIST.PARAMETERS    = ''
+    LIST.PARAMETERS<2> =  FN.STORE.SRC.JNL
+
+    CALL BATCH.BUILD.LIST(LIST.PARAMETERS,ID.LIST)
+
+    RETURN
+END
